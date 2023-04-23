@@ -1,0 +1,239 @@
+#!/bin/sh
+export POSIXLY_CORRECT=yes
+
+#file size histogram values check
+hundredB=0
+oneKiB=0
+tenKiB=0
+hundredKiB=0
+oneMiB=0
+tenMiB=0
+hundredMiB=0
+oneGiB=0
+bigger=0
+
+normalize=0
+i_set=0
+
+is_folder(){
+#checks whether the passed input is a file or directory
+	if [ -f $1 ]; then
+		folder=1 #is a file
+	elif [ -d $1 ]; then
+		folder=0 #is a directory
+	else
+		folder=2 #neither
+	fi
+}
+
+check_folder(){
+#goes through the passed folder counts the files it contains
+#if any new folders are found function repeats itself
+	#current_file = $1
+	new_file_list=$(ls -A $1)
+	for i in $new_file_list
+	do
+		if [ $i_set = 1 ]; then
+			if echo "$i" | grep -qE "$FILE_ERE" ; then
+				continue
+			fi
+		fi
+		is_folder $1/$i
+	       	if [ $folder -eq 0 ]; then
+			ND=$( expr $ND + 1 )
+			check_folder $1/$i
+		elif [ $folder -eq 1 ]; then
+			NF=$( expr $NF + 1 )
+			file_size $1/$i
+		else
+			echo got to this exit
+			exit 1
+		fi
+	done
+}
+file_size(){
+#checks the size of file
+#counts how many files are there of the same size category
+	size=$(wc -c < "$1")
+	if [ $size -lt 100 ]; then
+		hundredB=$(expr "$hundredB" + 1 )
+	elif [ $size -lt 1024 ]; then
+		oneKiB=$(expr "$oneKiB" + 1 )
+	elif [ $size -lt 10240 ]; then
+		tenKiB=$(expr "$tenKiB" + 1 )
+	elif [ $size -lt 102400 ]; then
+		hundredKiB=$(expr "$hundredKiB" + 1 )
+	elif [ $size -lt 1048576 ]; then
+		oneMiB=$(expr "$oneMiB" + 1 )
+	elif [ $size -lt 10485760 ]; then
+		tenMiB=$(expr "$tenMiB" + 1 )
+	elif [ $size -lt 104857600 ]; then
+		hundredMiB=$(expr "$hundredMiB" + 1 )
+	elif [ $size -lt 1073741824 ]; then
+		oneGiB=$(expr "$oneGiB" + 1 )
+	else
+		bigger=$(expr "$bigger" + 1 )
+	fi
+}
+
+print_hash(){
+#determines the no. of hashes and prints them
+	terminal_length=$(tput cols)
+	terminal_length=$(expr $terminal_length - 13)
+	if [ $normalize = 1 ]; then
+		if [ $2 -gt $terminal_length ]; then
+			#a=` expr $terminal_length - 13 `
+			b=` expr $1 \* $terminal_length `
+			c=` expr $b / $2 `
+			yes "#" | tr -d '\n' | head -c "$c"
+		else
+			yes "#" | tr -d '\n' | head -c "$1"
+		fi
+	else
+		yes "#" | tr -d '\n' | head -c "$1"
+	fi
+}
+
+#input check & dir print
+if [ $# -gt 4 ]; then
+	echo wrong input, invalid no. of arguments
+	echo dirgraph [-i FILE_ERE] [-n] [DIR]
+	exit 1
+fi
+if [ $# -eq 0 ]; then
+	DIR=$PWD
+elif [ $# -eq 1 ]; then
+	if [ $1 = -i ]; then
+		echo wrong input, invalid no. of arguments
+		echo dirgraph [-i FILE_ERE] [-n] [DIR]
+		exit 1
+	elif [ $1 = -n ]; then
+		DIR=$PWD
+		normalize=1
+	else 
+		DIR=$1
+	fi
+elif [ $# -eq 2 ]; then
+	if [ $1 = -i ]; then
+		DIR=$PWD
+		FILE_ERE=$2
+		i_set=1
+	elif [ $2 = -i ]; then
+		echo wrong input, -i must be followed by FILE_EXE
+		echo dirgraph [-i FILE_ERE] [-n] [DIR]
+		exit 1
+	elif [ $1 = -n ]; then
+		DIR=$2
+		normalize=1
+	else
+		echo invalid input
+		echo dirgraph [-i FILE_ERE] [-n] [DIR]
+		exit 1
+	fi
+elif [ $# -eq 3 ]; then
+	if [ $1 = -i ]; then
+		FILE_ERE=$2
+		i_set=1
+		if [ $3 != -n ]; then
+		       DIR=$3
+	        else
+	 		DIR=$PWD
+			normalize=1		
+		fi
+	else
+		echo invalid input
+		echo dirgraph [-i FILE_ERE] [-n] [DIR]
+		exit 1
+	fi
+else
+	if [ $1 != -i ]; then
+		echo invalid input
+		echo dirgraph [-i FILE_ERE] [-n] [DIR]
+		exit 1
+	elif [ $3 != -n ]; then
+		echo invalid input
+		echo dirgraph [-i FILE_ERE] [-n] [DIR]
+		exit 1
+	else
+		FILE_ERE=$2
+		i_set=1
+		DIR=$4
+		normalize=1
+
+	fi
+fi
+
+#file/folder counter
+NF=0
+ND=1
+files=$(ls -A $DIR)
+IFS="
+"
+for file in $files
+do
+	if [ $i_set = 1 ]; then
+		if echo "$file" | grep -qE "$FILE_ERE" ; then
+			continue
+		fi
+	fi
+	current_file="$DIR"/"$file"
+	is_folder $current_file
+
+	if [ $folder -eq 0 ]; then
+		ND=$( expr "$ND" + 1 )
+		check_folder $current_file
+	elif [ $folder -eq 1 ]; then 
+		NF=$( expr $NF + 1 )
+		file_size $current_file
+	else
+		exit 1
+	fi
+
+done
+
+#finding the longest line
+longest_line=0
+if [ $hundredB -gt $longest_line ]; then
+	longest_line=$hundredB
+fi
+if [ $oneKiB -gt $longest_line ]; then
+	longest_line=$oneKiB
+fi
+if [ $tenKiB -gt $longest_line ]; then
+	longest_line=$tenKiB
+fi
+if [ $hundredKiB -gt $longest_line ]; then
+	longest_line=$hundredKiB
+fi
+if [ $oneMiB -gt $longest_line ]; then
+	longest_line=$oneMiB
+fi
+if [ $tenMiB -gt $longest_line ]; then
+	longest_line=$tenMiB
+fi
+if [ $hundredMiB -gt $longest_line ]; then
+	longest_line=$hundredMiB
+fi
+if [ $oneGiB -gt $longest_line ]; then
+	longest_line=$oneGiB
+fi
+if [ $bigger -gt $longest_line ]; then
+	longest_line=$bigger
+fi
+
+
+echo Root directory: $DIR
+echo Directories: $ND
+echo All files: $NF
+echo File size histogram:
+printf "  <100 B  : "; print_hash $hundredB $longest_line
+printf "\n  <1 KiB  : "; print_hash $oneKiB $longest_line
+printf "\n  <10 KiB : "; print_hash $tenKiB $longest_line 
+printf "\n  <100 KiB: "; print_hash $hundredKiB $longest_line
+printf "\n  <1 MiB  : "; print_hash $oneMiB $longest_line
+printf "\n  <10 MiB : "; print_hash $tenMiB $longest_line
+printf "\n  <100 MiB: "; print_hash $hundredMiB $longest_line
+printf "\n  <1 GiB  : "; print_hash $oneGiB $longest_line
+printf "\n  >=1 GiB : "; print_hash $bigger $longest_line
+echo
+exit 0
